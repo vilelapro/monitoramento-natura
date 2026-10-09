@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Estoque Natura</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f1e7;--card:#fffdf8;--ink:#26301f;--mut:#6d7563;--line:#e2dccb;--acc:#d9631e;--accink:#fff;--ok:#2f6b3f;--bad:#b3261e;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b2117;--card:#252d20;--ink:#eee9da;--mut:#a3ab98;--line:#37412f;--acc:#f08a4b;--accink:#1b2117;--ok:#7fc08f;--bad:#f2867f}}
+:root[data-theme="dark"]{--bg:#1b2117;--card:#252d20;--ink:#eee9da;--mut:#a3ab98;--line:#37412f;--acc:#f08a4b;--accink:#1b2117;--ok:#7fc08f;--bad:#f2867f}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 "DM Sans",system-ui,sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px 16px 110px}
+h1,h2{font-family:Fraunces,Georgia,serif;font-weight:600;margin:8px 0 14px}
+h1{font-size:26px}h2{font-size:20px;margin-top:22px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.mut{color:var(--mut);font-size:14px}
+.big{font-family:Fraunces,Georgia,serif;font-size:30px;line-height:1.1}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid .card{margin:0}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+label{display:block;font-size:14px;color:var(--mut);margin:12px 0 4px}
+input,select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px}
+button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:13px 16px;background:var(--acc);color:var(--accink);cursor:pointer}
+button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.sm{padding:7px 12px;font-size:14px}
+button.full{width:100%;margin-top:16px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg button{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.seg button.on{background:var(--acc);color:var(--accink);border-color:var(--acc)}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;background:none;color:var(--mut);border-radius:0;padding:14px 4px;font-size:14px}
+nav button.on{color:var(--acc);box-shadow:inset 0 3px 0 var(--acc)}
+.pill{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--bad);color:var(--bad)}
+.empty{text-align:center;color:var(--mut);padding:28px 10px}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<nav id="nav"></nav>
+<script>
+var S={p:[],h:[]},tab='resumo',tipo='s',editId=null,KEY='estoque-natura-v1';
+var ref=null,status='local';
+try{var r=localStorage.getItem(KEY);if(r)S=JSON.parse(r)}catch(e){}
+function save(){var j=JSON.stringify(S);try{localStorage.setItem(KEY,j)}catch(e){}
+ if(ref){status='salvando';badge();ref.set({json:j,t:Date.now()}).then(function(){status='online';badge()},function(){status='erro';badge()})}}
+function badge(){var b=document.querySelector('#st');if(b)b.textContent={online:'salvo online',salvando:'salvando…',erro:'sem permissão para salvar online',local:'só neste aparelho'}[status]||''}
+async function initDb(){try{if(!window.claude)return;var db=await claude.use('db');if(!db)return;ref=db.doc('app/estoque');
+ ref.onSnapshot(function(snap){if(snap.metadata.hasPendingWrites)return;
+  if(!snap.exists){if(S.p.length||S.h.length)save();else{status='online';badge()}return}
+  var j=snap.data().json;if(j===JSON.stringify(S)){status='online';badge();return}
+  try{S=JSON.parse(j);try{localStorage.setItem(KEY,j)}catch(e){}status='online';if(tab==='mov'||tab==='form')badge();else render()}catch(e){}
+ },function(){status='local';badge()})}catch(e){}}
+function $(s){return document.querySelector(s)}
+function brl(n){return (n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function hoje(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function dbr(d){var a=d.split('-');return a[2]+'/'+a[1]}
+function prod(id){return S.p.find(function(x){return x.id===id})}
+function num(v){return parseFloat(String(v).replace(',','.'))||0}
+
+var TABS=[['resumo','Resumo'],['produtos','Produtos'],['mov','Movimentar'],['hist','Histórico']];
+function render(){
+ $('#nav').innerHTML=TABS.map(function(t){return '<button class="'+(tab===t[0]?'on':'')+'" onclick="go(\''+t[0]+'\')">'+t[1]+'</button>'}).join('');
+ var v={resumo:vResumo,produtos:vProdutos,mov:vMov,hist:vHist,form:vForm}[tab];
+ $('#app').innerHTML=v();window.scrollTo(0,0);badge();
+}
+function go(t){tab=t;if(t!=='form')editId=null;render()}
+
+function vResumo(){
+ var m=hoje().slice(0,7),vend=0,lucro=0,comp=0;
+ S.h.forEach(function(x){if(x.d.slice(0,7)!==m)return;
+  if(x.t==='s'){vend+=x.q*x.pr;lucro+=x.q*(x.pr-x.c)}else comp+=x.q*x.pr});
+ var est=S.p.reduce(function(a,p){return a+p.q*p.c},0);
+ var baixo=S.p.filter(function(p){return p.q<=p.m});
+ var cnt={};S.h.forEach(function(x){if(x.t==='s'&&x.d.slice(0,7)===m)cnt[x.pid]=(cnt[x.pid]||0)+x.q});
+ var top=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a]}).slice(0,3);
+ var h='<h1>Estoque Natura</h1><div class="mut" style="margin:-8px 0 14px">Resultado do mês atual · <span id="st"></span></div>';
+ h+='<div class="grid"><div class="card"><div class="mut">Vendas</div><div class="big">'+brl(vend)+'</div></div>'+
+ '<div class="card"><div class="mut">Lucro</div><div class="big ok">'+brl(lucro)+'</div></div>'+
+ '<div class="card"><div class="mut">Compras (entradas)</div><div class="big">'+brl(comp)+'</div></div>'+
+ '<div class="card"><div class="mut">Estoque a custo</div><div class="big">'+brl(est)+'</div></div></div>';
+ h+='<h2>Repor em breve</h2>';
+ h+=baixo.length?baixo.map(function(p){return '<div class="card row"><div>'+esc(p.n)+'<div class="mut">mínimo '+p.m+'</div></div><span class="pill">'+p.q+' un.</span></div>'}).join(''):'<div class="card mut">Nenhum produto com estoque baixo.</div>';
+ if(top.length){h+='<h2>Mais vendidos no mês</h2>';h+=top.map(function(id){var p=prod(id);return '<div class="card row"><span>'+esc(p?p.n:'(removido)')+'</span><b>'+cnt[id]+' un.</b></div>'}).join('')}
+ h+='<h2>Backup</h2><div class="card"><div class="mut">Os dados ficam salvos online e sincronizam entre os aparelhos. Mesmo assim, copie o backup de vez em quando e guarde no WhatsApp ou e-mail.</div>'+
+ '<textarea id="bk" rows="3" placeholder="Cole aqui um backup para restaurar"></textarea>'+
+ '<div class="grid" style="margin-top:10px"><button class="sec" onclick="copiar()">Copiar backup</button><button class="sec" onclick="restaurar()">Restaurar</button></div></div>';
+ return h;
+}
+function copiar(){var t=JSON.stringify(S),b=$('#bk');b.value=t;b.select();
+ try{navigator.clipboard.writeText(t).then(function(){alert('Backup copiado.')},function(){alert('Selecione o texto do campo e copie manualmente.')})}catch(e){alert('Selecione o texto do campo e copie manualmente.')}}
+function restaurar(){var t=$('#bk').value.trim();if(!t)return alert('Cole o backup no campo primeiro.');
+ try{var d=JSON.parse(t);if(!d.p||!d.h)throw 0;if(!confirm('Isso substitui os dados atuais. Continuar?'))return;S=d;save();render()}catch(e){alert('Backup inválido.')}}
+
+function vProdutos(){
+ var h='<div class="row"><h1>Produtos</h1><button class="sm" onclick="novo()">Novo produto</button></div>';
+ if(!S.p.length)return h+'<div class="empty">Nenhum produto ainda.<br>Toque em “Novo produto” para cadastrar o primeiro.</div>';
+ return h+S.p.slice().sort(function(a,b){return a.n.localeCompare(b.n)}).map(function(p){
+  return '<div class="card"><div class="row"><b>'+esc(p.n)+'</b><span class="'+(p.q<=p.m?'bad':'')+'"><b>'+p.q+'</b> un.</span></div>'+
+  '<div class="mut">'+(p.cod?esc(p.cod)+' · ':'')+'custo '+brl(p.c)+' · venda '+brl(p.v)+'</div>'+
+  '<div class="row" style="margin-top:10px;justify-content:flex-end"><button class="sm sec" onclick="editar(\''+p.id+'\')">Editar</button><button class="sm sec" onclick="apagar(\''+p.id+'\')">Excluir</button></div></div>'}).join('');
+}
+function novo(){editId='new';tab='form';render()}
+function editar(id){editId=id;tab='form';render()}
+function vForm(){
+ var p=editId==='new'?{n:'',cod:'',c:'',v:'',q:0,m:2}:prod(editId);
+ return '<h1>'+(editId==='new'?'Novo produto':'Editar produto')+'</h1>'+
+ '<label>Nome</label><input id="f_n" value="'+esc(p.n)+'" placeholder="Ex.: Kaiak Masculino 100 ml">'+
+ '<label>Código (opcional)</label><input id="f_cod" value="'+esc(p.cod||'')+'">'+
+ '<div class="grid"><div><label>Preço de custo (R$)</label><input id="f_c" inputmode="decimal" value="'+esc(p.c)+'"></div>'+
+ '<div><label>Preço de venda (R$)</label><input id="f_v" inputmode="decimal" value="'+esc(p.v)+'"></div></div>'+
+ '<div class="grid"><div><label>'+(editId==='new'?'Quantidade em estoque':'Em estoque')+'</label><input id="f_q" inputmode="numeric" value="'+p.q+'"></div>'+
+ '<div><label>Avisar quando restar até</label><input id="f_m" inputmode="numeric" value="'+p.m+'"></div></div>'+
+ '<button class="full" onclick="salvarProd()">Salvar produto</button><button class="full sec" onclick="go(\'produtos\')">Cancelar</button>';
+}
+function salvarProd(){
+ var n=$('#f_n').value.trim();if(!n)return alert('Digite o nome do produto.');
+ var d={n:n,cod:$('#f_cod').value.trim(),c:num($('#f_c').value),v:num($('#f_v').value),q:Math.round(num($('#f_q').value)),m:Math.round(num($('#f_m').value))};
+ if(editId==='new'){d.id=uid();S.p.push(d)}else{var p=prod(editId);Object.assign(p,d)}
+ save();go('produtos');
+}
+function apagar(id){if(!confirm('Excluir este produto? O histórico de vendas é mantido.'))return;S.p=S.p.filter(function(x){return x.id!==id});save();render()}
+
+function vMov(){
+ var h='<h1>Movimentar</h1>';
+ if(!S.p.length)return h+'<div class="empty">Cadastre um produto antes de registrar vendas ou entradas.<br><br><button onclick="novo()">Novo produto</button></div>';
+ h+='<div class="seg"><button class="'+(tipo==='s'?'on':'')+'" onclick="setTipo(\'s\')">Venda (saída)</button><button class="'+(tipo==='e'?'on':'')+'" onclick="setTipo(\'e\')">Entrada</button></div>';
+ h+='<label>Produto</label><select id="m_p" onchange="preco()">'+S.p.slice().sort(function(a,b){return a.n.localeCompare(b.n)}).map(function(p){return '<option value="'+p.id+'">'+esc(p.n)+' ('+p.q+' em estoque)</option>'}).join('')+'</select>';
+ h+='<div class="grid"><div><label>Quantidade</label><input id="m_q" inputmode="numeric" value="1"></div><div><label>'+(tipo==='s'?'Preço de venda (un.)':'Custo (un.)')+'</label><input id="m_pr" inputmode="decimal"></div></div>';
+ if(tipo==='s')h+='<label>Cliente (opcional)</label><input id="m_cl" placeholder="Nome da cliente">';
+ h+='<label>Data</label><input id="m_d" type="date" value="'+hoje()+'">';
+ h+='<button class="full" onclick="registrar()">'+(tipo==='s'?'Registrar venda':'Registrar entrada')+'</button>';
+ setTimeout(preco,0);return h;
+}
+function setTipo(t){tipo=t;render()}
+function preco(){var p=prod($('#m_p').value);if(p)$('#m_pr').value=String(tipo==='s'?p.v:p.c).replace('.',',')}
+function registrar(){
+ var p=prod($('#m_p').value),q=Math.round(num($('#m_q').value)),pr=num($('#m_pr').value),d=$('#m_d').value||hoje();
+ if(q<1)return alert('Digite uma quantidade maior que zero.');
+ if(tipo==='s'&&q>p.q)return alert('Só há '+p.q+' unidade(s) em estoque.');
+ if(tipo==='e'&&pr>0)p.c=pr;
+ p.q+=tipo==='s'?-q:q;
+ S.h.unshift({id:uid(),t:tipo,pid:p.id,n:p.n,q:q,pr:pr,c:p.c,d:d,cl:tipo==='s'?($('#m_cl').value.trim()):''});
+ save();tab='hist';render();
+}
+
+function vHist(){
+ var h='<h1>Histórico</h1>';
+ if(!S.h.length)return h+'<div class="empty">Nenhuma venda ou entrada registrada ainda.</div>';
+ return h+S.h.slice().sort(function(a,b){return b.d.localeCompare(a.d)}).map(function(x){
+  return '<div class="card"><div class="row"><b>'+esc(x.n)+'</b><b class="'+(x.t==='s'?'ok':'')+'">'+(x.t==='s'?'+ ':'− ')+brl(x.q*x.pr)+'</b></div>'+
+  '<div class="mut">'+(x.t==='s'?'Venda':'Entrada')+' · '+x.q+' un. · '+dbr(x.d)+(x.cl?' · '+esc(x.cl):'')+'</div>'+
+  '<div style="text-align:right;margin-top:8px"><button class="sm sec" onclick="desfazer(\''+x.id+'\')">Desfazer</button></div></div>'}).join('');
+}
+function desfazer(id){
+ var x=S.h.find(function(h){return h.id===id});if(!x||!confirm('Desfazer este lançamento? O estoque será corrigido.'))return;
+ var p=prod(x.pid);if(p)p.q+=x.t==='s'?x.q:-x.q;
+ S.h=S.h.filter(function(h){return h.id!==id});save();render();
+}
+render();initDb();
+</script>
+</body>
+</html>
