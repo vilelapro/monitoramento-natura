@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Estoque Natura</title>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root{--bg:#f6f1e7;--card:#fffdf8;--ink:#26301f;--mut:#6d7563;--line:#e2dccb;--acc:#d9631e;--accink:#fff;--ok:#2f6b3f;--bad:#b3261e;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
@@ -43,17 +46,42 @@ nav button.on{color:var(--acc);box-shadow:inset 0 3px 0 var(--acc)}
 <nav id="nav"></nav>
 <script>
 var S={p:[],h:[]},tab='resumo',tipo='s',editId=null,KEY='estoque-natura-v1';
-var ref=null,status='local';
+var ref=null,status='local',user=null,authReady=false,fdb=null,unsub=null;
+var CFG={apiKey:"AIzaSyCpvRzHVY46IUQSJlcyDRwiUbjVGMdpDLY",authDomain:"estoque-natura.firebaseapp.com",projectId:"estoque-natura",storageBucket:"estoque-natura.firebasestorage.app",messagingSenderId:"366098524218",appId:"1:366098524218:web:ba8fc5e1dab8ed83616d03"};
 try{var r=localStorage.getItem(KEY);if(r)S=JSON.parse(r)}catch(e){}
 function save(){var j=JSON.stringify(S);try{localStorage.setItem(KEY,j)}catch(e){}
  if(ref){status='salvando';badge();ref.set({json:j,t:Date.now()}).then(function(){status='online';badge()},function(){status='erro';badge()})}}
-function badge(){var b=document.querySelector('#st');if(b)b.textContent={online:'salvo online',salvando:'salvando…',erro:'sem permissão para salvar online',local:'só neste aparelho'}[status]||''}
-async function initDb(){try{if(!window.claude)return;var db=await claude.use('db');if(!db)return;ref=db.doc('app/estoque');
- ref.onSnapshot(function(snap){if(snap.metadata.hasPendingWrites)return;
-  if(!snap.exists){if(S.p.length||S.h.length)save();else{status='online';badge()}return}
-  var j=snap.data().json;if(j===JSON.stringify(S)){status='online';badge();return}
-  try{S=JSON.parse(j);try{localStorage.setItem(KEY,j)}catch(e){}status='online';if(tab==='mov'||tab==='form')badge();else render()}catch(e){}
- },function(){status='local';badge()})}catch(e){}}
+function badge(){var b=document.querySelector('#st');if(b)b.textContent={online:'salvo online',salvando:'salvando\u2026',conectando:'conectando\u2026',erro:'erro ao salvar online',local:'s\u00f3 neste aparelho'}[status]||''}
+function initDb(){
+ try{
+  firebase.initializeApp(CFG);fdb=firebase.firestore();
+  try{fdb.enablePersistence({synchronizeTabs:true}).catch(function(){})}catch(e){}
+  firebase.auth().onAuthStateChanged(function(u){
+   authReady=true;user=u;
+   if(unsub){unsub();unsub=null}
+   ref=null;
+   if(u){
+    ref=fdb.collection('estoque').doc('dados');status='conectando';
+    unsub=ref.onSnapshot(function(snap){
+     if(snap.metadata.hasPendingWrites)return;
+     if(!snap.exists){
+      if(snap.metadata.fromCache)return;
+      if(S.p.length||S.h.length)save();else{status='online';badge()}
+      return}
+     var j=snap.data().json;
+     if(j===JSON.stringify(S)){status='online';badge();return}
+     try{S=JSON.parse(j);try{localStorage.setItem(KEY,j)}catch(e){}status='online';if(tab==='mov'||tab==='form')badge();else render()}catch(e){}
+    },function(){status='erro';badge()});
+   }
+   render();
+  });
+ }catch(e){user={local:1};authReady=true;status='local';render()}
+}
+function vLogin(){return '<h1>Estoque Natura</h1><div class="mut" style="margin:-8px 0 14px">Entre para ver seu estoque</div><label>E-mail</label><input id="l_e" type="email" autocomplete="username"><label>Senha</label><input id="l_s" type="password" autocomplete="current-password"><div id="l_err" class="bad" style="margin-top:10px"></div><button class="full" onclick="entrar()">Entrar</button>'}
+function entrar(){var e=$('#l_e').value.trim(),p=$('#l_s').value;if(!e||!p){$('#l_err').textContent='Digite o e-mail e a senha.';return}
+ $('#l_err').textContent='Entrando\u2026';
+ firebase.auth().signInWithEmailAndPassword(e,p).catch(function(x){$('#l_err').textContent=(x.code==='auth/network-request-failed')?'Sem internet. Tente de novo.':'E-mail ou senha incorretos.'})}
+function sair(){if(!confirm('Sair da conta? Seus dados continuam salvos online.'))return;try{firebase.auth().signOut()}catch(e){}}
 function $(s){return document.querySelector(s)}
 function brl(n){return (n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
@@ -65,6 +93,8 @@ function num(v){return parseFloat(String(v).replace(',','.'))||0}
 
 var TABS=[['resumo','Resumo'],['produtos','Produtos'],['mov','Movimentar'],['hist','Histórico']];
 function render(){
+ if(!authReady){$('#nav').innerHTML='';$('#app').innerHTML='<div class="empty">Carregando\u2026</div>';return}
+ if(!user){$('#nav').innerHTML='';$('#app').innerHTML=vLogin();return}
  $('#nav').innerHTML=TABS.map(function(t){return '<button class="'+(tab===t[0]?'on':'')+'" onclick="go(\''+t[0]+'\')">'+t[1]+'</button>'}).join('');
  var v={resumo:vResumo,produtos:vProdutos,mov:vMov,hist:vHist,form:vForm}[tab];
  $('#app').innerHTML=v();window.scrollTo(0,0);badge();
@@ -89,7 +119,7 @@ function vResumo(){
  if(top.length){h+='<h2>Mais vendidos no mês</h2>';h+=top.map(function(id){var p=prod(id);return '<div class="card row"><span>'+esc(p?p.n:'(removido)')+'</span><b>'+cnt[id]+' un.</b></div>'}).join('')}
  h+='<h2>Backup</h2><div class="card"><div class="mut">Os dados ficam salvos online e sincronizam entre os aparelhos. Mesmo assim, copie o backup de vez em quando e guarde no WhatsApp ou e-mail.</div>'+
  '<textarea id="bk" rows="3" placeholder="Cole aqui um backup para restaurar"></textarea>'+
- '<div class="grid" style="margin-top:10px"><button class="sec" onclick="copiar()">Copiar backup</button><button class="sec" onclick="restaurar()">Restaurar</button></div></div>';
+ '<div class="grid" style="margin-top:10px"><button class="sec" onclick="copiar()">Copiar backup</button><button class="sec" onclick="restaurar()">Restaurar</button></div></div><button class="sec full" onclick="sair()">Sair da conta</button>';
  return h;
 }
 function copiar(){var t=JSON.stringify(S),b=$('#bk');b.value=t;b.select();
